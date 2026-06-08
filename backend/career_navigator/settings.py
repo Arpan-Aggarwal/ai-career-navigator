@@ -67,7 +67,10 @@ WSGI_APPLICATION = 'career_navigator.wsgi.application'
 # Database — SQLite for dev, Postgres for prod via DATABASE_URL
 if os.environ.get('DATABASE_URL'):
     import dj_database_url
-    DATABASES = {'default': dj_database_url.config(conn_max_age=600)}
+    DATABASES = {'default': dj_database_url.config(
+        conn_max_age=600,
+        engine='django.db.backends.postgresql',
+    )}
 else:
     DATABASES = {
         'default': {
