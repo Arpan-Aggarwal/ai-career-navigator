@@ -118,7 +118,7 @@ SIMPLE_JWT = {
 
 CORS_ALLOWED_ORIGINS = [h.strip() for h in os.environ.get(
     'CORS_ALLOWED_ORIGINS',
-    'http://localhost:5173,http://localhost:3000'
+    'https://ai-career-navigator-murex.vercel.app,http://localhost:3000'
 ).split(',')]
 CORS_ALLOW_CREDENTIALS = True
 
