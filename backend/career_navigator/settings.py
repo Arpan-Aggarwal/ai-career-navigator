@@ -121,7 +121,9 @@ CORS_ALLOWED_ORIGINS = [h.strip() for h in os.environ.get(
     'https://ai-career-navigator-murex.vercel.app,http://localhost:3000'
 ).split(',')]
 CORS_ALLOW_CREDENTIALS = True
-
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+]
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
 GROQ_PRIMARY_MODEL = 'llama-3.3-70b-versatile'
 GROQ_FALLBACK_MODEL = 'llama-3.1-8b-instant'
