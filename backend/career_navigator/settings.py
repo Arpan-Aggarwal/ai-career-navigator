@@ -9,8 +9,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
-
-# Fix: split and strip ALLOWED_HOSTS correctly
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')]
 
 INSTALLED_APPS = [
@@ -32,7 +30,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # Must be first
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -64,13 +62,12 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'career_navigator.wsgi.application'
 
-# Database — SQLite for dev, Postgres for prod via DATABASE_URL
+# ── Database ──────────────────────────────────────────────────────────────────
 if os.environ.get('DATABASE_URL'):
     import dj_database_url
-    DATABASES = {'default': dj_database_url.config(
-        conn_max_age=600,
-        engine='django.db.backends.postgresql',
-    )}
+    _db = dj_database_url.config(conn_max_age=600)
+    _db['ENGINE'] = 'django.db.backends.postgresql'
+    DATABASES = {'default': _db}
 else:
     DATABASES = {
         'default': {
@@ -97,6 +94,7 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# ── REST Framework ────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -116,21 +114,39 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-CORS_ALLOWED_ORIGINS = [h.strip() for h in os.environ.get(
+# ── CORS ──────────────────────────────────────────────────────────────────────
+# Parse and clean all origins — strip slashes, spaces, empty strings
+_raw_origins = os.environ.get(
     'CORS_ALLOWED_ORIGINS',
-    'https://ai-career-navigator-murex.vercel.app,http://localhost:3000'
-).split(',')]
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://.*\.vercel\.app$",
+    'http://localhost:5173,http://localhost:3000'
+)
+CORS_ALLOWED_ORIGINS = [
+    o.strip().rstrip('/')
+    for o in _raw_origins.split(',')
+    if o.strip()
 ]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_METHODS = [
+    'DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT',
+]
+
+CORS_ALLOW_HEADERS = [
+    'accept', 'accept-encoding', 'authorization', 'content-type',
+    'dnt', 'origin', 'user-agent', 'x-csrftoken', 'x-requested-with',
+]
+
+# ── Groq ──────────────────────────────────────────────────────────────────────
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
 GROQ_PRIMARY_MODEL = 'llama-3.3-70b-versatile'
 GROQ_FALLBACK_MODEL = 'llama-3.1-8b-instant'
 
+# ── Google OAuth ──────────────────────────────────────────────────────────────
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
 
+# ── Email ─────────────────────────────────────────────────────────────────────
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
