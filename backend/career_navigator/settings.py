@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')]
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,*').split(',')]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -30,7 +30,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',  # Must be first
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -63,11 +63,17 @@ TEMPLATES = [
 WSGI_APPLICATION = 'career_navigator.wsgi.application'
 
 # ── Database ──────────────────────────────────────────────────────────────────
-if os.environ.get('DATABASE_URL'):
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+
+if DATABASE_URL:
     import dj_database_url
-    _db = dj_database_url.config(conn_max_age=600)
-    _db['ENGINE'] = 'django.db.backends.postgresql'
-    DATABASES = {'default': _db}
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=True,
+        )
+    }
 else:
     DATABASES = {
         'default': {
@@ -115,23 +121,12 @@ SIMPLE_JWT = {
 }
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-# Parse and clean all origins — strip slashes, spaces, empty strings
-_raw_origins = os.environ.get(
-    'CORS_ALLOWED_ORIGINS',
-    'http://localhost:5173,http://localhost:3000'
-)
-CORS_ALLOWED_ORIGINS = [
-    o.strip().rstrip('/')
-    for o in _raw_origins.split(',')
-    if o.strip()
-]
-
+CORS_ALLOW_ALL_ORIGINS = True          # ← Temporarily allow ALL origins to unblock you
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_METHODS = [
     'DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT',
 ]
-
 CORS_ALLOW_HEADERS = [
     'accept', 'accept-encoding', 'authorization', 'content-type',
     'dnt', 'origin', 'user-agent', 'x-csrftoken', 'x-requested-with',
