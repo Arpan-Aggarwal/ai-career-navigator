@@ -85,8 +85,22 @@ Keep it motivating and professional.
     return result or f"Based on your assessment results, {career} is an excellent career choice that aligns with your strengths and interests."
 
 
-def generate_roadmap(career: str, scores: dict, profile: dict, assessment_id: int) -> Optional[dict]:
-    """Generate a personalized learning roadmap."""
+def generate_roadmap(career: str, scores: dict, profile: dict, assessment_id: int, duration_months: int = None) -> Optional[dict]:
+    """Generate a personalized learning roadmap with optional custom duration."""
+
+    if duration_months:
+        duration_guidance = f"""
+IMPORTANT: The user has requested a {duration_months}-month roadmap.
+Fit ALL 5 phases within exactly {duration_months} months total.
+Phase durations must sum to {duration_months * 4} weeks.
+- 1-2 months: essentials only, 1-2 topics per phase
+- 3-4 months: core skills only, skip nice-to-haves
+- 6 months: balanced plan with projects
+- 9-12 months: comprehensive with depth
+The total_duration_months field MUST equal {duration_months}."""
+    else:
+        duration_guidance = "Choose a realistic duration based on the career complexity and user skill level."
+
     messages = [
         {
             "role": "system",
@@ -101,10 +115,12 @@ Generate a comprehensive 5-phase learning roadmap for becoming a {career}.
 Assessment Scores: {json.dumps(scores)}
 User Profile: {json.dumps(profile)}
 
+{duration_guidance}
+
 Return ONLY this JSON structure:
 {{
   "career": "{career}",
-  "total_duration_months": <number>,
+  "total_duration_months": <number — must match requested duration if specified>,
   "phases": [
     {{
       "phase_number": 1,
@@ -119,7 +135,7 @@ Return ONLY this JSON structure:
           "estimated_hours": <number>
         }}
       ],
-      "projects": ["Project idea 1", "Project idea 2"],
+      "projects": ["Project idea 1"],
       "certifications": ["Cert name"],
       "milestones": ["Milestone 1", "Milestone 2"]
     }}
@@ -129,7 +145,7 @@ Return ONLY this JSON structure:
   "job_titles": ["title1", "title2"]
 }}
 
-Tailor it based on the user's existing skills and assessment scores. Make phase durations realistic."""
+Tailor based on existing skills and scores. If duration is short, be ruthlessly focused on essentials only."""
         }
     ]
 
@@ -207,3 +223,160 @@ Return ONLY:
     if not raw:
         return None
     return parse_json_response(raw)
+# ── Assessment Question Generator ─────────────────────────────────────────────
+
+CATEGORY_TOPICS = {
+    'logical_reasoning': 'logical reasoning, series completion, syllogisms, blood relations, seating arrangements, coding-decoding',
+    'programming_aptitude': 'programming concepts, data structures, algorithms, complexity, code output prediction, debugging',
+    'mathematical_thinking': 'algebra, probability, statistics, calculus basics, number theory, percentages, ratios',
+    'problem_solving': 'real-world problem decomposition, optimization, debugging scenarios, systems thinking',
+    'communication': 'professional communication, conflict resolution, technical explanation, stakeholder management',
+    'creativity': 'lateral thinking, innovative solutions, design thinking, unconventional approaches',
+}
+
+
+def generate_assessment_questions(num_per_category: int = 3) -> list:
+    """
+    Calls Groq to generate fresh unique MCQ questions every session.
+    Returns flat list of dicts: id, category, difficulty, question, options, correct
+    """
+    all_questions = []
+    question_id = 1
+
+    for category, topics in CATEGORY_TOPICS.items():
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert question setter for aptitude and technical assessments. "
+                    "Generate fresh, unique, high-quality MCQs every time — never repeat standard textbook examples. "
+                    "Respond with valid JSON only — no markdown, no text outside JSON."
+                )
+            },
+            {
+                "role": "user",
+                "content": f"""Generate exactly {num_per_category} multiple choice questions about: {topics}
+
+Rules:
+- 1 question difficulty 1 (easy), 1 difficulty 2 (medium), 1 difficulty 3 (hard)
+- Each question has exactly 4 options
+- Questions must be unique and creative — not standard textbook examples
+- correct is the index (0, 1, 2, or 3) of the correct option in the options array
+
+Return ONLY this JSON:
+{{
+  "questions": [
+    {{
+      "difficulty": 1,
+      "question": "Question text?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correct": 0
+    }},
+    {{
+      "difficulty": 2,
+      "question": "Question text?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correct": 2
+    }},
+    {{
+      "difficulty": 3,
+      "question": "Question text?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correct": 1
+    }}
+  ]
+}}"""
+            }
+        ]
+
+        raw = call_groq_with_fallback(messages, max_tokens=1200, temperature=0.9)
+        if not raw:
+            logger.error(f"Groq returned nothing for category: {category}")
+            continue
+
+        data = parse_json_response(raw)
+        if not data or 'questions' not in data:
+            logger.error(f"Failed to parse questions for category: {category}")
+            continue
+
+        for q in data['questions'][:num_per_category]:
+            if not all(k in q for k in ['question', 'options', 'correct', 'difficulty']):
+                continue
+            if len(q['options']) != 4:
+                continue
+            if q['correct'] not in [0, 1, 2, 3]:
+                continue
+
+            all_questions.append({
+                'id': question_id,
+                'category': category,
+                'difficulty': q['difficulty'],
+                'question': q['question'],
+                'options': q['options'],
+                'correct': q['correct'],
+            })
+            question_id += 1
+
+    import random
+    random.shuffle(all_questions)
+    return all_questions
+
+
+def get_fallback_questions() -> list:
+    """Used only if Groq is completely unavailable."""
+    return [
+        {"id": 1, "category": "logical_reasoning", "difficulty": 1,
+         "question": "What comes next: 2, 6, 12, 20, 30, ?",
+         "options": ["40", "42", "44", "46"], "correct": 1},
+        {"id": 2, "category": "logical_reasoning", "difficulty": 2,
+         "question": "A is the father of B. B is the sister of C. C is the son of D. How is A related to D?",
+         "options": ["Father-in-law", "Brother-in-law", "Son-in-law", "Cannot be determined"], "correct": 0},
+        {"id": 3, "category": "logical_reasoning", "difficulty": 3,
+         "question": "If the day before yesterday was Thursday, what day will it be the day after tomorrow?",
+         "options": ["Sunday", "Monday", "Tuesday", "Wednesday"], "correct": 0},
+        {"id": 4, "category": "programming_aptitude", "difficulty": 1,
+         "question": "What is the output of print(type(1/2)) in Python 3?",
+         "options": ["<class 'int'>", "<class 'float'>", "<class 'double'>", "Error"], "correct": 1},
+        {"id": 5, "category": "programming_aptitude", "difficulty": 2,
+         "question": "What is the time complexity of binary search?",
+         "options": ["O(n)", "O(n²)", "O(log n)", "O(n log n)"], "correct": 2},
+        {"id": 6, "category": "programming_aptitude", "difficulty": 3,
+         "question": "What is the space complexity of merge sort?",
+         "options": ["O(1)", "O(log n)", "O(n)", "O(n log n)"], "correct": 2},
+        {"id": 7, "category": "mathematical_thinking", "difficulty": 1,
+         "question": "What is 15% of 200?",
+         "options": ["25", "30", "35", "40"], "correct": 1},
+        {"id": 8, "category": "mathematical_thinking", "difficulty": 2,
+         "question": "What is the derivative of x² + 3x + 5?",
+         "options": ["2x + 3", "x + 3", "2x", "x² + 3"], "correct": 0},
+        {"id": 9, "category": "mathematical_thinking", "difficulty": 3,
+         "question": "Probability of exactly 2 heads in 4 coin flips?",
+         "options": ["1/4", "3/8", "1/2", "3/16"], "correct": 1},
+        {"id": 10, "category": "problem_solving", "difficulty": 1,
+         "question": "App is slow. First step to diagnose?",
+         "options": ["Rewrite the app", "Profile the code to find bottlenecks", "Add more servers", "Ask users for faster device"], "correct": 1},
+        {"id": 11, "category": "problem_solving", "difficulty": 2,
+         "question": "3-gallon and 5-gallon jug. How to measure exactly 4 gallons?",
+         "options": ["Fill 5, pour into 3, empty 3, pour remaining, fill 5, top up 3", "Fill 3 twice into 5", "Fill 5 subtract 1", "Impossible"], "correct": 0},
+        {"id": 12, "category": "problem_solving", "difficulty": 3,
+         "question": "8 identical balls, one heavier. Minimum balance weighings to find it?",
+         "options": ["1", "2", "3", "4"], "correct": 1},
+        {"id": 13, "category": "communication", "difficulty": 1,
+         "question": "Best way to explain a complex technical concept to a non-technical stakeholder?",
+         "options": ["Use jargon", "Use analogies and simple language", "Give documentation", "Skip explanation"], "correct": 1},
+        {"id": 14, "category": "communication", "difficulty": 2,
+         "question": "During code review you find a fundamental design flaw. You should:",
+         "options": ["Rewrite it yourself", "Ignore it", "Explain constructively and suggest alternatives", "Report to manager"], "correct": 2},
+        {"id": 15, "category": "communication", "difficulty": 3,
+         "question": "Your team is split on two technical approaches. As a neutral developer you should:",
+         "options": ["Pick the senior's side", "Facilitate a structured pros/cons discussion", "Let them argue", "Escalate to management"], "correct": 1},
+        {"id": 16, "category": "creativity", "difficulty": 1,
+         "question": "Competitor launches identical product. Most creative response?",
+         "options": ["Lower prices", "Copy features", "Find underserved niche and dominate it", "Shut down"], "correct": 2},
+        {"id": 17, "category": "creativity", "difficulty": 2,
+         "question": "Company search feature is slow. Most creative fix?",
+         "options": ["Ask users to wait", "Upgrade server", "Caching + indexing + perceived performance tricks", "Add loading animation"], "correct": 2},
+        {"id": 18, "category": "creativity", "difficulty": 3,
+         "question": "Limited budget, need to validate idea fast. Best approach?",
+         "options": ["Build full product", "Landing page with signup to measure interest first", "Abandon idea", "Wait for funding"], "correct": 1},
+    ]

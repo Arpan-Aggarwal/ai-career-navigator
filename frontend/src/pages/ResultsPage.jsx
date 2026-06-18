@@ -14,6 +14,7 @@ export default function ResultsPage() {
   const queryClient = useQueryClient()
   const [selectedCareer, setSelectedCareer] = useState(null)
   const [generatingRoadmap, setGeneratingRoadmap] = useState(false)
+  const [durationMonths, setDurationMonths] = useState(6)
 
   const { data: assessment, isLoading: loadingAssessment } = useQuery({
     queryKey: ['assessment-result'],
@@ -31,7 +32,7 @@ export default function ResultsPage() {
     if (!selectedCareer) { toast.error('Please select a career first.'); return }
     setGeneratingRoadmap(true)
     try {
-      await roadmapAPI.generate(selectedCareer)
+      await roadmapAPI.generate(selectedCareer, durationMonths)
       queryClient.invalidateQueries(['active-roadmap'])
       toast.success(`${selectedCareer} roadmap generated!`)
       navigate('/roadmap')
@@ -181,18 +182,58 @@ export default function ResultsPage() {
 
       {/* Generate Roadmap CTA */}
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="glass-card p-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h3 className="font-display font-semibold text-white mb-1 flex items-center gap-2"><Sparkles className="w-5 h-5 text-accent-cyan" /> Generate Your Roadmap</h3>
-            <p className="text-sm text-gray-400">
-              {selectedCareer ? `Ready to generate a personalized roadmap for ${selectedCareer}` : 'Select a career above to generate your AI-powered learning roadmap'}
-            </p>
+        <h3 className="font-display font-semibold text-white mb-1 flex items-center gap-2">
+          <Sparkles className="w-5 h-5 text-accent-cyan" /> Generate Your Roadmap
+        </h3>
+        <p className="text-sm text-gray-400 mb-5">
+          {selectedCareer ? `Generating a personalized roadmap for ${selectedCareer}` : 'Select a career above first, then choose your timeline'}
+        </p>
+
+        {/* Duration Picker */}
+        <div className="mb-5">
+          <label className="label mb-3">⏱️ How long do you want to spend learning?</label>
+          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+            {[1, 2, 3, 4, 6, 9, 12].map(m => (
+              <button
+                key={m}
+                onClick={() => setDurationMonths(m)}
+                className={`py-2.5 rounded-xl text-sm font-display font-semibold transition-all duration-200 border ${
+                  durationMonths === m
+                    ? 'bg-primary-600 border-primary-500 text-white shadow-glow'
+                    : 'glass border-white/10 text-gray-400 hover:border-white/20 hover:text-white'
+                }`}
+              >
+                {m}mo
+              </button>
+            ))}
           </div>
-          <button onClick={generateRoadmap} disabled={!selectedCareer || generatingRoadmap} className="btn-primary flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
-            {generatingRoadmap ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Map className="w-4 h-4" />}
-            {generatingRoadmap ? 'Generating...' : 'Generate Roadmap'}
-          </button>
+          <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+            <span className={`px-2 py-0.5 rounded-full font-mono ${
+              durationMonths <= 2 ? 'bg-red-500/20 text-red-400' :
+              durationMonths <= 4 ? 'bg-amber-500/20 text-amber-400' :
+              durationMonths <= 6 ? 'bg-accent-cyan/20 text-accent-cyan' :
+              'bg-accent-teal/20 text-accent-teal'
+            }`}>
+              {durationMonths <= 2 ? '⚡ Crash Course' :
+              durationMonths <= 4 ? '🎯 Focused Sprint' :
+              durationMonths <= 6 ? '⚖️ Balanced' : '🏆 Comprehensive'}
+            </span>
+            <span>
+              {durationMonths <= 2 ? 'Essentials only — fast but intense' :
+              durationMonths <= 4 ? 'Core skills — skips nice-to-haves' :
+              durationMonths <= 6 ? 'Solid foundations with projects' :
+              'Deep knowledge with advanced topics'}
+            </span>
+          </div>
         </div>
+
+        <button onClick={generateRoadmap} disabled={!selectedCareer || generatingRoadmap}
+          className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+          {generatingRoadmap
+            ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            : <Map className="w-4 h-4" />}
+          {generatingRoadmap ? `Generating ${durationMonths}-month roadmap...` : `Generate ${durationMonths}-month Roadmap`}
+        </button>
       </motion.div>
 
       {/* Explanation */}

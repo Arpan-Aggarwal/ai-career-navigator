@@ -13,6 +13,15 @@ from .serializers import RoadmapSerializer, MilestoneSerializer
 class GenerateRoadmapView(APIView):
     def post(self, request):
         career = request.data.get('career')
+        duration_months = request.data.get('duration_months')
+
+        if duration_months is not None:
+            try:
+                duration_months = int(duration_months)
+                if duration_months < 1 or duration_months > 24:
+                    return Response({'error': 'duration_months must be between 1 and 24.'}, status=status.HTTP_400_BAD_REQUEST)
+            except (ValueError, TypeError):
+                return Response({'error': 'duration_months must be a number.'}, status=status.HTTP_400_BAD_REQUEST)
         if not career:
             return Response({'error': 'career is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -41,9 +50,17 @@ class GenerateRoadmapView(APIView):
                 'goals': profile.career_goals,
             }
 
-        roadmap_data = generate_roadmap(career, scores, profile_dict, assessment.id)
+        roadmap_data = generate_roadmap(
+    career=career,
+    scores=scores,
+    profile=profile_dict,
+    assessment_id=assessment.id,
+    duration_months=duration_months,
+)
 
         if not roadmap_data:
+            if duration_months:
+                roadmap_data['total_duration_months'] = duration_months
             # Fallback basic roadmap
             roadmap_data = _get_fallback_roadmap(career)
 

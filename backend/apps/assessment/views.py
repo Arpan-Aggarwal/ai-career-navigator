@@ -1,39 +1,30 @@
-from rest_framework import generics, status, permissions
+from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import transaction
+from django.core.cache import cache
 
-from .models import AssessmentResult, QUESTIONS
+from services.groq_service import generate_assessment_questions, get_fallback_questions
+from .models import AssessmentResult, CATEGORIES
 from .serializers import AssessmentSubmitSerializer, AssessmentResultSerializer
 
 
-def calculate_scores(answers: dict) -> dict:
-    """Calculate category scores from submitted answers."""
-    category_scores = {
-        'logical_reasoning': {'correct': 0, 'total': 0},
-        'programming_aptitude': {'correct': 0, 'total': 0},
-        'mathematical_thinking': {'correct': 0, 'total': 0},
-        'problem_solving': {'correct': 0, 'total': 0},
-        'communication': {'correct': 0, 'total': 0},
-        'creativity': {'correct': 0, 'total': 0},
-    }
+def calculate_scores(answers: dict, questions: list) -> dict:
+    category_scores = {cat: {'correct': 0, 'total': 0} for cat in CATEGORIES}
 
-    for question in QUESTIONS:
-        qid = str(question['id'])
-        cat = question['category']
+    for q in questions:
+        qid = str(q['id'])
+        cat = q['category']
+        if cat not in category_scores:
+            continue
         category_scores[cat]['total'] += 1
-
-        if qid in answers and answers[qid] == question['correct']:
+        if qid in answers and int(answers[qid]) == int(q['correct']):
             category_scores[cat]['correct'] += 1
 
     result = {}
     for cat, data in category_scores.items():
-        if data['total'] > 0:
-            result[cat] = round((data['correct'] / data['total']) * 100, 1)
-        else:
-            result[cat] = 0.0
+        result[cat] = round((data['correct'] / data['total']) * 100, 1) if data['total'] > 0 else 0.0
 
-    # Weighted total score
     weights = {
         'logical_reasoning': 0.20,
         'programming_aptitude': 0.25,
@@ -42,25 +33,30 @@ def calculate_scores(answers: dict) -> dict:
         'communication': 0.10,
         'creativity': 0.10,
     }
-    total = sum(result.get(cat, 0) * weight for cat, weight in weights.items())
-    result['total'] = round(total, 1)
+    result['total'] = round(sum(result.get(c, 0) * w for c, w in weights.items()), 1)
     return result
 
 
 class QuestionsView(APIView):
-    """Return assessment questions (without correct answers)."""
-
     def get(self, request):
-        safe_questions = []
-        for q in QUESTIONS:
-            safe_questions.append({
-                'id': q['id'],
-                'category': q['category'],
-                'question': q['question'],
-                'options': q['options'],
-                'difficulty': q['difficulty'],
-            })
-        return Response({'questions': safe_questions, 'total': len(safe_questions)})
+        cache_key = f"assessment_questions_{request.user.id}"
+        cached = cache.get(cache_key)
+
+        if cached:
+            safe = [{k: v for k, v in q.items() if k != 'correct'} for q in cached]
+            return Response({'questions': safe, 'total': len(safe), 'source': 'cached'})
+
+        questions = generate_assessment_questions(num_per_category=3)
+
+        if not questions or len(questions) < 12:
+            questions = get_fallback_questions()
+
+        # Cache WITH correct answers server-side for 30 minutes
+        cache.set(cache_key, questions, timeout=60 * 30)
+
+        # Send WITHOUT correct answers to frontend
+        safe = [{k: v for k, v in q.items() if k != 'correct'} for q in questions]
+        return Response({'questions': safe, 'total': len(safe), 'source': 'groq'})
 
 
 class SubmitAssessmentView(APIView):
@@ -71,15 +67,20 @@ class SubmitAssessmentView(APIView):
         answers = serializer.validated_data['answers']
         time_taken = serializer.validated_data.get('time_taken_seconds', 0)
 
-        scores = calculate_scores(answers)
+        cache_key = f"assessment_questions_{request.user.id}"
+        questions = cache.get(cache_key)
+
+        if not questions:
+            questions = get_fallback_questions()
+
+        scores = calculate_scores(answers, questions)
 
         with transaction.atomic():
-            # Mark previous as not latest
             AssessmentResult.objects.filter(user=request.user, is_latest=True).update(is_latest=False)
-
             result = AssessmentResult.objects.create(
                 user=request.user,
                 answers=answers,
+                questions_used=questions,
                 scores=scores,
                 total_score=scores['total'],
                 logical_reasoning_score=scores.get('logical_reasoning', 0),
@@ -91,6 +92,8 @@ class SubmitAssessmentView(APIView):
                 time_taken_seconds=time_taken,
                 is_latest=True,
             )
+
+        cache.delete(cache_key)
 
         return Response({
             'result': AssessmentResultSerializer(result).data,

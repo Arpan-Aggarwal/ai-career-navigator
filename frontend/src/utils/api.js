@@ -72,7 +72,7 @@ export const careersAPI = {
 
 // Roadmap
 export const roadmapAPI = {
-  generate: (career) => api.post('/roadmap/generate/', { career }),
+  generate: (career, duration_months) => api.post('/roadmap/generate/', { career, duration_months }),
   getActive: () => api.get('/roadmap/active/'),
   getAll: () => api.get('/roadmap/'),
   completeMilestone: (id) => api.post(`/roadmap/milestones/${id}/complete/`),
