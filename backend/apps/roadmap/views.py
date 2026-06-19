@@ -67,11 +67,6 @@ class GenerateRoadmapView(APIView):
         if not roadmap_data:
             roadmap_data = _get_fallback_roadmap(career, duration_months or 6)
 
-        if duration_months:
-            roadmap_data['total_duration_months'] = duration_months
-            # Fallback basic roadmap
-            roadmap_data = _get_fallback_roadmap(career)
-
         with transaction.atomic():
             # Deactivate old roadmaps
             Roadmap.objects.filter(user=request.user, is_active=True).update(is_active=False)
