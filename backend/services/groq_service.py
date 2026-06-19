@@ -88,61 +88,110 @@ Keep it motivating and professional.
 def generate_roadmap(career: str, scores: dict, profile: dict, assessment_id: int, duration_months: int = None) -> Optional[dict]:
     """Generate a personalized learning roadmap with optional custom duration."""
 
-    if duration_months:
-        duration_guidance = f"""
-IMPORTANT: The user has requested a {duration_months}-month roadmap.
-Fit ALL 5 phases within exactly {duration_months} months total.
-Phase durations must sum to {duration_months * 4} weeks.
-- 1-2 months: essentials only, 1-2 topics per phase
-- 3-4 months: core skills only, skip nice-to-haves
-- 6 months: balanced plan with projects
-- 9-12 months: comprehensive with depth
-The total_duration_months field MUST equal {duration_months}."""
-    else:
-        duration_guidance = "Choose a realistic duration based on the career complexity and user skill level."
-    if duration_months:
-        duration_instruction = (
-            f"IMPORTANT: The user has chosen a {duration_months}-month plan. "
-            f"You MUST set total_duration_months to exactly {duration_months}. "
-            f"All 5 phase duration_weeks values must add up to exactly {duration_months * 4} weeks. "
-            f"Ruthlessly cut scope to fit — fewer topics, smaller projects, essentials only if needed."
-        )
-    else:
-        duration_instruction = (
-            "Choose a realistic duration based on career complexity and the user's current skill level."
-        )
+    target = duration_months or 6
 
     messages = [
         {
             "role": "system",
             "content": """You are an expert career coach and curriculum designer. Generate detailed, personalized learning roadmaps.
-    Always respond with valid JSON only. No markdown, no explanations outside the JSON."""
+Always respond with valid JSON only. No markdown, no explanations outside the JSON."""
         },
         {
             "role": "user",
             "content": f"""
-    Generate a comprehensive 5-phase learning roadmap for becoming a {career}.
+Generate a 5-phase learning roadmap for becoming a {career}.
 
-    Assessment Scores: {json.dumps(scores)}
-    User Profile: {json.dumps(profile)}
+Assessment Scores: {json.dumps(scores)}
+User Profile: {json.dumps(profile)}
 
-    {duration_instruction}
+STRICT REQUIREMENT: This roadmap MUST be exactly {target} months long.
+- total_duration_months MUST be {target}
+- All 5 phase duration_weeks values MUST add up to exactly {target * 4} weeks
+- Each phase gets roughly {round((target * 4) / 5)} weeks
+- Adjust topic depth to fit: short plans = essentials only, long plans = comprehensive
 
-    Return ONLY this JSON structure:
+Return ONLY this JSON structure:
+{{
+  "career": "{career}",
+  "total_duration_months": {target},
+  "phases": [
     {{
-    "career": "{career}",
-    "total_duration_months": <number>,
-    ...
+      "phase_number": 1,
+      "title": "Phase title",
+      "duration_weeks": {round((target * 4) / 5)},
+      "description": "Brief description",
+      "topics": [
+        {{
+          "name": "Topic name",
+          "description": "What to learn",
+          "resources": ["resource1", "resource2"],
+          "estimated_hours": <number>
+        }}
+      ],
+      "projects": ["Project idea 1"],
+      "certifications": ["Cert name"],
+      "milestones": ["Milestone 1", "Milestone 2"]
     }}
-
-    Tailor based on existing skills and scores. If duration is short, be ruthlessly focused on essentials only."""
+  ],
+  "key_skills": ["skill1", "skill2"],
+  "tools": ["tool1", "tool2"],
+  "job_titles": ["title1", "title2"]
+}}"""
         }
     ]
 
     raw = call_groq_with_fallback(messages, max_tokens=3000, temperature=0.5)
     if not raw:
         return None
-    return parse_json_response(raw)
+
+    roadmap_data = parse_json_response(raw)
+    if not roadmap_data:
+        return None
+
+    # ── Hard enforce duration regardless of what Groq returned ────────────────
+    # This is the critical fix — we never trust Groq to get the duration right
+    roadmap_data = _enforce_duration(roadmap_data, target)
+    return roadmap_data
+
+
+def _enforce_duration(roadmap_data: dict, target_months: int) -> dict:
+    """
+    Forcefully rescale all phase durations to match the target.
+    This runs AFTER Groq responds so it cannot be ignored.
+    """
+    target_weeks = target_months * 4
+    phases = roadmap_data.get('phases', [])
+
+    if not phases:
+        return roadmap_data
+
+    # Calculate what Groq actually returned
+    current_total_weeks = sum(p.get('duration_weeks', 0) for p in phases)
+
+    if current_total_weeks == 0:
+        # Groq returned no durations — distribute evenly
+        weeks_per_phase = target_weeks // len(phases)
+        remainder = target_weeks % len(phases)
+        for i, phase in enumerate(phases):
+            phase['duration_weeks'] = weeks_per_phase + (1 if i < remainder else 0)
+    else:
+        # Rescale proportionally so they sum to target_weeks
+        scaled_weeks = []
+        for phase in phases:
+            proportion = phase.get('duration_weeks', 0) / current_total_weeks
+            scaled_weeks.append(max(1, round(proportion * target_weeks)))
+
+        # Fix rounding drift — adjust last phase so total is exact
+        diff = target_weeks - sum(scaled_weeks)
+        scaled_weeks[-1] = max(1, scaled_weeks[-1] + diff)
+
+        for i, phase in enumerate(phases):
+            phase['duration_weeks'] = scaled_weeks[i]
+
+    # Always enforce the top-level field
+    roadmap_data['total_duration_months'] = target_months
+    roadmap_data['phases'] = phases
+    return roadmap_data
 
 
 def generate_skill_gap_analysis(career: str, current_skills: list, scores: dict) -> Optional[dict]:
