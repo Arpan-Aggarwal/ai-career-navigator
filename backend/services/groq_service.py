@@ -100,54 +100,42 @@ Phase durations must sum to {duration_months * 4} weeks.
 The total_duration_months field MUST equal {duration_months}."""
     else:
         duration_guidance = "Choose a realistic duration based on the career complexity and user skill level."
+    if duration_months:
+        duration_instruction = (
+            f"IMPORTANT: The user has chosen a {duration_months}-month plan. "
+            f"You MUST set total_duration_months to exactly {duration_months}. "
+            f"All 5 phase duration_weeks values must add up to exactly {duration_months * 4} weeks. "
+            f"Ruthlessly cut scope to fit — fewer topics, smaller projects, essentials only if needed."
+        )
+    else:
+        duration_instruction = (
+            "Choose a realistic duration based on career complexity and the user's current skill level."
+        )
 
     messages = [
         {
             "role": "system",
             "content": """You are an expert career coach and curriculum designer. Generate detailed, personalized learning roadmaps.
-Always respond with valid JSON only. No markdown, no explanations outside the JSON."""
+    Always respond with valid JSON only. No markdown, no explanations outside the JSON."""
         },
         {
             "role": "user",
             "content": f"""
-Generate a comprehensive 5-phase learning roadmap for becoming a {career}.
+    Generate a comprehensive 5-phase learning roadmap for becoming a {career}.
 
-Assessment Scores: {json.dumps(scores)}
-User Profile: {json.dumps(profile)}
+    Assessment Scores: {json.dumps(scores)}
+    User Profile: {json.dumps(profile)}
 
-{'IMPORTANT: User requested a ' + str(duration_months) + '-month roadmap. Fit ALL 5 phases within exactly ' + str(duration_months) + ' months. total_duration_months MUST equal ' + str(duration_months) + '.' if duration_months else 'Choose a realistic duration based on career complexity and user skill level.'}
+    {duration_instruction}
 
-{duration_guidance}
-
-Return ONLY this JSON structure:
-{{
-  "career": "{career}",
-  "total_duration_months": <number — must match requested duration if specified>,
-  "phases": [
+    Return ONLY this JSON structure:
     {{
-      "phase_number": 1,
-      "title": "Phase title",
-      "duration_weeks": <number>,
-      "description": "Brief description",
-      "topics": [
-        {{
-          "name": "Topic name",
-          "description": "What to learn",
-          "resources": ["resource1", "resource2"],
-          "estimated_hours": <number>
-        }}
-      ],
-      "projects": ["Project idea 1"],
-      "certifications": ["Cert name"],
-      "milestones": ["Milestone 1", "Milestone 2"]
+    "career": "{career}",
+    "total_duration_months": <number>,
+    ...
     }}
-  ],
-  "key_skills": ["skill1", "skill2"],
-  "tools": ["tool1", "tool2"],
-  "job_titles": ["title1", "title2"]
-}}
 
-Tailor based on existing skills and scores. If duration is short, be ruthlessly focused on essentials only."""
+    Tailor based on existing skills and scores. If duration is short, be ruthlessly focused on essentials only."""
         }
     ]
 
