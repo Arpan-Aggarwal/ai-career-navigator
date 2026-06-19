@@ -15,7 +15,7 @@ CATEGORIES = [
 class AssessmentResult(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='assessments')
     answers = models.JSONField(default=dict)
-    questions_used = models.JSONField(default=list)   # Full questions stored at submission
+    questions_used = models.JSONField(default=list)
     scores = models.JSONField(default=dict)
     total_score = models.FloatField(default=0.0)
     logical_reasoning_score = models.FloatField(default=0.0)

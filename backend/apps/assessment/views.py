@@ -2,7 +2,6 @@ from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import transaction
-from django.core.cache import cache
 
 from services.groq_service import generate_assessment_questions, get_fallback_questions
 from .models import AssessmentResult, CATEGORIES
@@ -23,7 +22,9 @@ def calculate_scores(answers: dict, questions: list) -> dict:
 
     result = {}
     for cat, data in category_scores.items():
-        result[cat] = round((data['correct'] / data['total']) * 100, 1) if data['total'] > 0 else 0.0
+        result[cat] = round(
+            (data['correct'] / data['total']) * 100, 1
+        ) if data['total'] > 0 else 0.0
 
     weights = {
         'logical_reasoning': 0.20,
@@ -33,33 +34,60 @@ def calculate_scores(answers: dict, questions: list) -> dict:
         'communication': 0.10,
         'creativity': 0.10,
     }
-    result['total'] = round(sum(result.get(c, 0) * w for c, w in weights.items()), 1)
+    result['total'] = round(
+        sum(result.get(c, 0) * w for c, w in weights.items()), 1
+    )
     return result
 
 
 class QuestionsView(APIView):
+    """
+    GET /api/assessment/questions/
+    Calls Groq to generate 18 fresh unique questions (3 per category).
+    Stores them in DB as a pending row (total_score=-1) so submit
+    can retrieve them without any cache dependency.
+    """
+
     def get(self, request):
-        cache_key = f"assessment_questions_{request.user.id}"
-        cached = cache.get(cache_key)
-
-        if cached:
-            safe = [{k: v for k, v in q.items() if k != 'correct'} for q in cached]
-            return Response({'questions': safe, 'total': len(safe), 'source': 'cached'})
-
+        # Generate fresh questions from Groq — unique every session
         questions = generate_assessment_questions(num_per_category=3)
 
+        # Fallback to static questions only if Groq completely fails
         if not questions or len(questions) < 12:
             questions = get_fallback_questions()
 
-        # Cache WITH correct answers server-side for 30 minutes
-        cache.set(cache_key, questions, timeout=60 * 30)
+        # Store in DB as a pending row so submit can retrieve them
+        with transaction.atomic():
+            # Clean up any previous pending session for this user
+            AssessmentResult.objects.filter(
+                user=request.user,
+                total_score=-1
+            ).delete()
 
-        # Send WITHOUT correct answers to frontend
-        safe = [{k: v for k, v in q.items() if k != 'correct'} for q in questions]
-        return Response({'questions': safe, 'total': len(safe), 'source': 'groq'})
+            # Save questions as pending assessment
+            AssessmentResult.objects.create(
+                user=request.user,
+                answers={},
+                questions_used=questions,
+                scores={},
+                total_score=-1,        # -1 = pending/in-progress marker
+                is_latest=False,
+            )
+
+        # Send to frontend WITHOUT correct answers
+        safe = [
+            {k: v for k, v in q.items() if k != 'correct'}
+            for q in questions
+        ]
+        return Response({'questions': safe, 'total': len(safe)})
 
 
 class SubmitAssessmentView(APIView):
+    """
+    POST /api/assessment/submit/
+    Retrieves the pending questions from DB, scores answers, saves result.
+    """
+
     def post(self, request):
         serializer = AssessmentSubmitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -67,16 +95,34 @@ class SubmitAssessmentView(APIView):
         answers = serializer.validated_data['answers']
         time_taken = serializer.validated_data.get('time_taken_seconds', 0)
 
-        cache_key = f"assessment_questions_{request.user.id}"
-        questions = cache.get(cache_key)
+        # Get the pending row that was saved during GET /questions/
+        pending = AssessmentResult.objects.filter(
+            user=request.user,
+            total_score=-1
+        ).order_by('-completed_at').first()
 
-        if not questions:
+        if pending and pending.questions_used:
+            questions = pending.questions_used
+        else:
+            # Fallback if pending row not found (session expired etc.)
             questions = get_fallback_questions()
 
         scores = calculate_scores(answers, questions)
 
         with transaction.atomic():
-            AssessmentResult.objects.filter(user=request.user, is_latest=True).update(is_latest=False)
+            # Mark all previous results as not latest
+            AssessmentResult.objects.filter(
+                user=request.user,
+                is_latest=True
+            ).update(is_latest=False)
+
+            # Delete the pending row
+            AssessmentResult.objects.filter(
+                user=request.user,
+                total_score=-1
+            ).delete()
+
+            # Save final scored result
             result = AssessmentResult.objects.create(
                 user=request.user,
                 answers=answers,
@@ -93,8 +139,6 @@ class SubmitAssessmentView(APIView):
                 is_latest=True,
             )
 
-        cache.delete(cache_key)
-
         return Response({
             'result': AssessmentResultSerializer(result).data,
             'message': 'Assessment completed successfully.',
@@ -106,7 +150,10 @@ class AssessmentResultView(generics.RetrieveAPIView):
 
     def get_object(self):
         try:
-            return AssessmentResult.objects.get(user=self.request.user, is_latest=True)
+            return AssessmentResult.objects.get(
+                user=self.request.user,
+                is_latest=True
+            )
         except AssessmentResult.DoesNotExist:
             from rest_framework.exceptions import NotFound
             raise NotFound('No assessment found. Please take the assessment first.')
@@ -116,4 +163,7 @@ class AssessmentHistoryView(generics.ListAPIView):
     serializer_class = AssessmentResultSerializer
 
     def get_queryset(self):
-        return AssessmentResult.objects.filter(user=self.request.user).order_by('-completed_at')[:10]
+        return AssessmentResult.objects.filter(
+            user=self.request.user,
+            total_score__gte=0       # Exclude pending rows
+        ).order_by('-completed_at')[:10]

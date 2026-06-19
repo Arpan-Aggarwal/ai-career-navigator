@@ -19,9 +19,15 @@ class GenerateRoadmapView(APIView):
             try:
                 duration_months = int(duration_months)
                 if duration_months < 1 or duration_months > 24:
-                    return Response({'error': 'duration_months must be between 1 and 24.'}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {'error': 'duration_months must be between 1 and 24.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
             except (ValueError, TypeError):
-                return Response({'error': 'duration_months must be a number.'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {'error': 'duration_months must be a number.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         if not career:
             return Response({'error': 'career is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -59,8 +65,10 @@ class GenerateRoadmapView(APIView):
 )
 
         if not roadmap_data:
-            if duration_months:
-                roadmap_data['total_duration_months'] = duration_months
+            roadmap_data = _get_fallback_roadmap(career, duration_months or 6)
+
+        if duration_months:
+            roadmap_data['total_duration_months'] = duration_months
             # Fallback basic roadmap
             roadmap_data = _get_fallback_roadmap(career)
 
