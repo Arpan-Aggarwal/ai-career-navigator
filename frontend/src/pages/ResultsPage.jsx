@@ -186,7 +186,9 @@ export default function ResultsPage() {
           <Sparkles className="w-5 h-5 text-accent-cyan" /> Generate Your Roadmap
         </h3>
         <p className="text-sm text-gray-400 mb-5">
-          {selectedCareer ? `Generating a personalized roadmap for ${selectedCareer}` : 'Select a career above first, then choose your timeline'}
+          {selectedCareer
+            ? `Ready to generate a personalized roadmap for ${selectedCareer}`
+            : 'Select a career above first, then choose your timeline'}
         </p>
 
         {/* Duration Picker */}
@@ -227,12 +229,17 @@ export default function ResultsPage() {
           </div>
         </div>
 
-        <button onClick={generateRoadmap} disabled={!selectedCareer || generatingRoadmap}
-          className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+        <button
+          onClick={generateRoadmap}
+          disabled={!selectedCareer || generatingRoadmap}
+          className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           {generatingRoadmap
             ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             : <Map className="w-4 h-4" />}
-          {generatingRoadmap ? `Generating ${durationMonths}-month roadmap...` : `Generate ${durationMonths}-month Roadmap`}
+          {generatingRoadmap
+            ? `Generating ${durationMonths}-month roadmap...`
+            : `Generate ${durationMonths}-month Roadmap`}
         </button>
       </motion.div>
 

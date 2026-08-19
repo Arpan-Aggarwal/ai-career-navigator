@@ -104,7 +104,15 @@ export default function AssessmentPage() {
     )
   }
 
-  if (isLoading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" /></div>
+  if (isLoading) return (
+  <div className="flex items-center justify-center h-64">
+    <div className="text-center">
+      <div className="w-10 h-10 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+      <p className="text-white font-display font-semibold mb-1">Generating your questions...</p>
+      <p className="text-gray-400 text-sm">AI is creating unique questions just for you.<br />This takes 15–20 seconds.</p>
+    </div>
+  </div>
+)
 
   const q = questions[current]
   const answered = Object.keys(answers).length

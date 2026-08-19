@@ -137,51 +137,68 @@ class CompleteMilestoneView(APIView):
         })
 
 
-def _get_fallback_roadmap(career: str) -> dict:
+def _get_fallback_roadmap(career: str, duration_months: int = 6) -> dict:
+    total_weeks = duration_months * 4
+    # Distribute weeks across 5 phases proportionally (same ratio as before)
+    ratios = [6, 8, 8, 4, 4]  # original week ratios
+    ratio_total = sum(ratios)
+    phase_weeks = [max(1, round((r / ratio_total) * total_weeks)) for r in ratios]
+    # Fix rounding drift so weeks add up exactly
+    diff = total_weeks - sum(phase_weeks)
+    phase_weeks[-1] = max(1, phase_weeks[-1] + diff)
+
     return {
         "career": career,
-        "total_duration_months": 6,
+        "total_duration_months": duration_months,
         "phases": [
             {
                 "phase_number": 1,
                 "title": "Fundamentals",
-                "duration_weeks": 6,
+                "duration_weeks": phase_weeks[0],
                 "description": "Build the foundational knowledge required.",
                 "topics": [
-                    {"name": "Core Concepts", "description": "Learn the basics.", "resources": ["Official Docs", "YouTube"], "estimated_hours": 20}
+                    {"name": "Core Concepts", "description": "Learn the basics.", "resources": ["Official Docs", "YouTube"], "estimated_hours": phase_weeks[0] * 10}
                 ],
                 "projects": ["Build a basic project"],
                 "certifications": [],
                 "milestones": ["Complete fundamentals", "Build first project"]
             },
             {
-                "phase_number": 2, "title": "Intermediate Skills", "duration_weeks": 8,
+                "phase_number": 2,
+                "title": "Intermediate Skills",
+                "duration_weeks": phase_weeks[1],
                 "description": "Deepen your knowledge with hands-on practice.",
-                "topics": [{"name": "Intermediate Topics", "description": "Expand skills.", "resources": ["Udemy", "Coursera"], "estimated_hours": 40}],
+                "topics": [{"name": "Intermediate Topics", "description": "Expand skills.", "resources": ["Udemy", "Coursera"], "estimated_hours": phase_weeks[1] * 10}],
                 "projects": ["Build an intermediate project"],
                 "certifications": ["Relevant certification"],
                 "milestones": ["Complete intermediate level", "Get certification"]
             },
             {
-                "phase_number": 3, "title": "Advanced Skills", "duration_weeks": 8,
+                "phase_number": 3,
+                "title": "Advanced Skills",
+                "duration_weeks": phase_weeks[2],
                 "description": "Master advanced concepts and industry tools.",
-                "topics": [{"name": "Advanced Topics", "description": "Master the domain.", "resources": ["Research papers", "GitHub"], "estimated_hours": 60}],
+                "topics": [{"name": "Advanced Topics", "description": "Master the domain.", "resources": ["Research papers", "GitHub"], "estimated_hours": phase_weeks[2] * 10}],
                 "projects": ["Build a full-scale project"],
                 "certifications": [],
                 "milestones": ["Complete advanced topics", "Build portfolio project"]
             },
             {
-                "phase_number": 4, "title": "Interview Preparation", "duration_weeks": 4,
+                "phase_number": 4,
+                "title": "Interview Preparation",
+                "duration_weeks": phase_weeks[3],
                 "description": "Prepare for technical interviews and DSA.",
-                "topics": [{"name": "DSA & System Design", "description": "Practice coding problems.", "resources": ["LeetCode", "HackerRank"], "estimated_hours": 30}],
+                "topics": [{"name": "DSA & System Design", "description": "Practice coding problems.", "resources": ["LeetCode", "HackerRank"], "estimated_hours": phase_weeks[3] * 10}],
                 "projects": [],
                 "certifications": [],
                 "milestones": ["Solve 100 LeetCode problems", "Complete 5 mock interviews"]
             },
             {
-                "phase_number": 5, "title": "Job Readiness", "duration_weeks": 4,
+                "phase_number": 5,
+                "title": "Job Readiness",
+                "duration_weeks": phase_weeks[4],
                 "description": "Polish your portfolio and start applying.",
-                "topics": [{"name": "Portfolio & Resume", "description": "Finalize your application materials.", "resources": ["Resume templates", "LinkedIn"], "estimated_hours": 15}],
+                "topics": [{"name": "Portfolio & Resume", "description": "Finalize your application materials.", "resources": ["Resume templates", "LinkedIn"], "estimated_hours": phase_weeks[4] * 10}],
                 "projects": ["Final capstone project"],
                 "certifications": [],
                 "milestones": ["Complete portfolio", "Apply to 10 companies"]
