@@ -134,8 +134,8 @@ CORS_ALLOW_HEADERS = [
 
 # ── Groq ──────────────────────────────────────────────────────────────────────
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
-GROQ_PRIMARY_MODEL = 'meta-llama/llama-prompt-guard-2-22m'
-GROQ_FALLBACK_MODEL = 'meta-llama/llama-prompt-guard-2-86m'
+GROQ_PRIMARY_MODEL = 'qwen/qwen3.6-27b'
+GROQ_FALLBACK_MODEL = 'groq/compound-mini'
 
 # ── Google OAuth ──────────────────────────────────────────────────────────────
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
