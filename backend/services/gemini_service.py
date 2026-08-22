@@ -41,7 +41,7 @@ def generate_questions_with_gemini() -> list:
 
     logger.info(f"=== GEMINI: Key found (prefix: {GEMINI_API_KEY[:8]}...), calling API ===")
 
-    prompt = """Generate exactly 18 multiple choice questions for an aptitude assessment — 3 per category.
+    prompt = """Generate exactly 15 multiple choice questions for an aptitude assessment — 3 per category.
 
 Categories:
 1. logical_reasoning: series, syllogisms, blood relations, seating arrangements, coding-decoding
@@ -80,10 +80,10 @@ Return exactly this JSON structure:
             }
         ],
         "generationConfig": {
-            "temperature": 0.85,
-            "maxOutputTokens": 4000,
-            "responseMimeType": "application/json"
-        }
+    "temperature": 0.85,
+    "maxOutputTokens": 8192,
+    "responseMimeType": "application/json"
+}
     }
 
     try:
