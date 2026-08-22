@@ -2,19 +2,18 @@ import json
 import re
 import logging
 import os
+import requests
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-GEMINI_MODEL = 'gemini-2.0-flash'
+GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
 
 
 def _parse_json(text: str) -> Optional[dict]:
-    """Robustly extract JSON from Gemini response."""
     if not text:
         return None
-    # Strip thinking tags and markdown fences
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
     text = re.sub(r'```(?:json)?\s*', '', text)
     text = re.sub(r'```\s*', '', text)
@@ -35,20 +34,15 @@ def _parse_json(text: str) -> Optional[dict]:
 
 
 def generate_questions_with_gemini() -> list:
-    """
-    Single Gemini API call to generate all 18 assessment questions.
-    Uses gemini-2.0-flash — free tier, 10 RPM, 1000 RPD.
-    """
+    logger.info("=== GEMINI: Starting question generation ===")
+
     if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY not set")
+        logger.error("=== GEMINI: GEMINI_API_KEY not set ===")
         return []
 
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel(GEMINI_MODEL)
+    logger.info(f"=== GEMINI: Key found (prefix: {GEMINI_API_KEY[:8]}...), calling API ===")
 
-        prompt = """Generate exactly 18 multiple choice questions for an aptitude assessment — 3 per category.
+    prompt = """Generate exactly 18 multiple choice questions for an aptitude assessment — 3 per category.
 
 Categories:
 1. logical_reasoning: series, syllogisms, blood relations, seating arrangements, coding-decoding
@@ -63,7 +57,7 @@ Rules:
 - Each question has EXACTLY 4 options
 - correct is the integer index 0, 1, 2, or 3 of the correct answer
 - Be creative — use real-world scenarios, not standard textbook examples
-- Return ONLY valid JSON, no explanation, no markdown
+- Return ONLY valid JSON, no explanation, no markdown, no code fences
 
 Return exactly this JSON structure:
 {
@@ -78,12 +72,42 @@ Return exactly this JSON structure:
   ]
 }"""
 
-        response = model.generate_content(prompt)
-        raw = response.text
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.85,
+            "maxOutputTokens": 4000,
+            "responseMimeType": "application/json"
+        }
+    }
+
+    try:
+        response = requests.post(
+            f"{GEMINI_API_URL}?key={GEMINI_API_KEY}",
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=60
+        )
+
+        logger.info(f"=== GEMINI: Response status: {response.status_code} ===")
+
+        if response.status_code != 200:
+            logger.error(f"=== GEMINI: API error {response.status_code}: {response.text[:300]} ===")
+            return []
+
+        result = response.json()
+        raw = result['candidates'][0]['content']['parts'][0]['text']
+        logger.info(f"=== GEMINI: Got response, length={len(raw)} chars ===")
 
         data = _parse_json(raw)
         if not data or 'questions' not in data:
-            logger.error("Gemini returned invalid JSON for questions")
+            logger.error(f"=== GEMINI: Invalid JSON. Preview: {raw[:300]} ===")
             return []
 
         valid_categories = [
@@ -116,9 +140,9 @@ Return exactly this JSON structure:
 
         import random
         random.shuffle(all_questions)
-        logger.info(f"Gemini generated {len(all_questions)} questions successfully")
+        logger.info(f"=== GEMINI: Successfully generated {len(all_questions)} questions ===")
         return all_questions
 
     except Exception as e:
-        logger.error(f"Gemini question generation failed: {e}")
+        logger.error(f"=== GEMINI: Exception: {type(e).__name__}: {e} ===")
         return []
