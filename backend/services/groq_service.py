@@ -42,33 +42,58 @@ def call_groq_with_fallback(messages: list, max_tokens: int = 2048, temperature:
 
 
 def parse_json_response(text: str) -> Optional[dict]:
-    """Extract and parse JSON from model response robustly."""
+    """Extract and parse JSON from model response robustly, handling truncation."""
     if not text:
         return None
 
     import re
 
-    # Strip <think>...</think> blocks (Qwen3 and other reasoning models)
+    # Strip <think>...</think> blocks
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-
     # Strip markdown code fences
     text = re.sub(r'```(?:json)?\s*', '', text)
     text = re.sub(r'```\s*', '', text)
     text = text.strip()
 
-    # Try direct parse
+    # Try direct parse first
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # Try to extract JSON object from surrounding text
+    # Try to extract JSON object
     try:
         start = text.find('{')
         end = text.rfind('}')
         if start != -1 and end != -1 and end > start:
             return json.loads(text[start:end + 1])
     except json.JSONDecodeError:
+        pass
+
+    # JSON is truncated — try to salvage it by closing open structures
+    try:
+        start = text.find('{')
+        if start != -1:
+            fragment = text[start:]
+            # Count open braces and brackets to close them
+            open_braces = fragment.count('{') - fragment.count('}')
+            open_brackets = fragment.count('[') - fragment.count(']')
+            # Remove trailing incomplete line (likely cut mid-value)
+            lines = fragment.rsplit('\n', 1)
+            if len(lines) > 1:
+                fragment = lines[0]
+                # Recount after trimming
+                open_braces = fragment.count('{') - fragment.count('}')
+                open_brackets = fragment.count('[') - fragment.count(']')
+            # Remove trailing comma if present
+            fragment = fragment.rstrip().rstrip(',')
+            # Close all open structures
+            fragment += ']' * max(0, open_brackets)
+            fragment += '}' * max(0, open_braces)
+            result = json.loads(fragment)
+            logger.warning("parse_json_response: recovered truncated JSON successfully")
+            return result
+    except (json.JSONDecodeError, Exception):
         pass
 
     logger.error(f"Failed to parse JSON from response: {text[:300]}")
@@ -157,7 +182,7 @@ Return ONLY this JSON structure:
         }
     ]
 
-    raw = call_groq_with_fallback(messages, max_tokens=3000, temperature=0.5)
+    raw = call_groq_with_fallback(messages, max_tokens=6000, temperature=0.5)
     if not raw:
         return None
 
