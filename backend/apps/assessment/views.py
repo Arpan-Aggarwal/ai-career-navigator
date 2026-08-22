@@ -3,7 +3,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import transaction
 
-from services.groq_service import generate_assessment_questions, get_fallback_questions
+from services.gemini_service import generate_questions_with_gemini
+from services.groq_service import get_fallback_questions
 from .models import AssessmentResult, CATEGORIES
 from .serializers import AssessmentSubmitSerializer, AssessmentResultSerializer
 
@@ -50,7 +51,7 @@ class QuestionsView(APIView):
 
     def get(self, request):
         # Generate fresh questions from Groq — unique every session
-        questions = generate_assessment_questions(num_per_category=3)
+        questions = generate_questions_with_gemini()
 
         # Fallback to static questions only if Groq completely fails
         if not questions or len(questions) < 12:
