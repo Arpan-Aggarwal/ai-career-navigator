@@ -8,7 +8,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent'
+GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent'
 
 def _parse_json(text: str) -> Optional[dict]:
     if not text:
