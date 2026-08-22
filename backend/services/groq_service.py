@@ -48,8 +48,9 @@ def parse_json_response(text: str) -> Optional[dict]:
 
     import re
 
-    # Strip <think>...</think> blocks
+    # Strip <think>...</think> blocks (Qwen, DeepSeek and other reasoning models)
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+
     # Strip markdown code fences
     text = re.sub(r'```(?:json)?\s*', '', text)
     text = re.sub(r'```\s*', '', text)
@@ -61,7 +62,7 @@ def parse_json_response(text: str) -> Optional[dict]:
     except json.JSONDecodeError:
         pass
 
-    # Try to extract JSON object
+    # Try to extract JSON object from surrounding text
     try:
         start = text.find('{')
         end = text.rfind('}')
@@ -70,28 +71,24 @@ def parse_json_response(text: str) -> Optional[dict]:
     except json.JSONDecodeError:
         pass
 
-    # JSON is truncated — try to salvage it by closing open structures
+    # JSON is truncated — try to salvage by closing open structures
     try:
         start = text.find('{')
         if start != -1:
             fragment = text[start:]
-            # Count open braces and brackets to close them
-            open_braces = fragment.count('{') - fragment.count('}')
-            open_brackets = fragment.count('[') - fragment.count(']')
-            # Remove trailing incomplete line (likely cut mid-value)
+            # Trim incomplete last line
             lines = fragment.rsplit('\n', 1)
             if len(lines) > 1:
                 fragment = lines[0]
-                # Recount after trimming
-                open_braces = fragment.count('{') - fragment.count('}')
-                open_brackets = fragment.count('[') - fragment.count(']')
-            # Remove trailing comma if present
+            # Remove trailing comma
             fragment = fragment.rstrip().rstrip(',')
-            # Close all open structures
+            # Count and close open structures
+            open_braces = fragment.count('{') - fragment.count('}')
+            open_brackets = fragment.count('[') - fragment.count(']')
             fragment += ']' * max(0, open_brackets)
             fragment += '}' * max(0, open_braces)
             result = json.loads(fragment)
-            logger.warning("parse_json_response: recovered truncated JSON successfully")
+            logger.warning("parse_json_response: recovered truncated JSON")
             return result
     except (json.JSONDecodeError, Exception):
         pass
