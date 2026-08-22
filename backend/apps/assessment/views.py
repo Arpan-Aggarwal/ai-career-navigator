@@ -50,12 +50,18 @@ class QuestionsView(APIView):
     """
 
     def get(self, request):
-        # Generate fresh questions from Groq — unique every session
-        questions = generate_questions_with_gemini()
+        import logging
+        logger = logging.getLogger(__name__)
 
-        # Fallback to static questions only if Groq completely fails
+        logger.info("=== QUESTIONS VIEW: Generating questions ===")
+        questions = generate_questions_with_gemini()
+        logger.info(f"=== QUESTIONS VIEW: Got {len(questions)} questions from Gemini ===")
+
         if not questions or len(questions) < 12:
+            logger.warning("=== QUESTIONS VIEW: Falling back to static questions ===")
             questions = get_fallback_questions()
+
+    # rest of the code stays the same...
 
         # Store in DB as a pending row so submit can retrieve them
         with transaction.atomic():

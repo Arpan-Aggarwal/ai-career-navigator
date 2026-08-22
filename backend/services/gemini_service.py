@@ -13,22 +13,44 @@ GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini
 def _parse_json(text: str) -> Optional[dict]:
     if not text:
         return None
-    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-    text = re.sub(r'```(?:json)?\s*', '', text)
-    text = re.sub(r'```\s*', '', text)
+
+    # Remove <think>...</think> blocks
+    text = re.sub(
+        r"<think>.*?</think>",
+        "",
+        text,
+        flags=re.DOTALL | re.IGNORECASE
+    )
+
+    # Remove Markdown code fences
+    text = re.sub(r"```json\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"```\s*", "", text)
+
     text = text.strip()
+
+    # First: try the complete response as JSON
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    try:
-        start = text.find('{')
-        end = text.rfind('}')
-        if start != -1 and end != -1 and end > start:
-            return json.loads(text[start:end + 1])
-    except json.JSONDecodeError:
-        pass
-    logger.error(f"Failed to parse JSON: {text[:300]}")
+
+    # Second: extract JSON object from surrounding text
+    start = text.find("{")
+    end = text.rfind("}")
+
+    if start != -1 and end != -1 and end > start:
+        json_text = text[start:end + 1]
+
+        try:
+            return json.loads(json_text)
+        except json.JSONDecodeError:
+            pass
+
+    logger.error(
+        "Failed to parse JSON: %s",
+        text[:300]
+    )
+
     return None
 
 
