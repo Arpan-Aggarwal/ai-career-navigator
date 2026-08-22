@@ -42,20 +42,37 @@ def call_groq_with_fallback(messages: list, max_tokens: int = 2048, temperature:
 
 
 def parse_json_response(text: str) -> Optional[dict]:
-    """Extract and parse JSON from model response."""
+    """Extract and parse JSON from model response robustly."""
+    if not text:
+        return None
+
+    import re
+
+    # Strip <think>...</think> blocks (Qwen3 and other reasoning models)
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+
+    # Strip markdown code fences
+    text = re.sub(r'```(?:json)?\s*', '', text)
+    text = re.sub(r'```\s*', '', text)
+    text = text.strip()
+
+    # Try direct parse
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # Try to extract JSON from markdown code blocks
-        import re
-        match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
-        if match:
-            try:
-                return json.loads(match.group(1))
-            except json.JSONDecodeError:
-                pass
-        logger.error(f"Failed to parse JSON from response: {text[:200]}")
-        return None
+        pass
+
+    # Try to extract JSON object from surrounding text
+    try:
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            return json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        pass
+
+    logger.error(f"Failed to parse JSON from response: {text[:300]}")
+    return None
 
 
 def generate_career_explanation(career: str, scores: dict, profile: dict) -> str:
@@ -276,85 +293,102 @@ CATEGORY_TOPICS = {
 
 def generate_assessment_questions(num_per_category: int = 3) -> list:
     """
-    Calls Groq to generate fresh unique MCQ questions every session.
-    Returns flat list of dicts: id, category, difficulty, question, options, correct
+    Single API call to generate all 18 questions at once.
+    Avoids rate limits caused by making 6 separate calls.
     """
-    all_questions = []
-    question_id = 1
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an expert question setter for aptitude and technical assessments. "
+                "Generate fresh, unique, creative MCQs — never use standard textbook examples. "
+                "Respond with valid JSON only. No markdown, no <think> tags, no text outside JSON."
+            )
+        },
+        {
+            "role": "user",
+            "content": f"""Generate exactly 18 multiple choice questions — 3 per category.
 
-    for category, topics in CATEGORY_TOPICS.items():
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are an expert question setter for aptitude and technical assessments. "
-                    "Generate fresh, unique, high-quality MCQs every time — never repeat standard textbook examples. "
-                    "Respond with valid JSON only — no markdown, no text outside JSON."
-                )
-            },
-            {
-                "role": "user",
-                "content": f"""Generate exactly {num_per_category} multiple choice questions about: {topics}
+Categories and topics:
+1. logical_reasoning: logical reasoning, series completion, syllogisms, blood relations, seating arrangements
+2. programming_aptitude: data structures, algorithms, time complexity, code output prediction, debugging
+3. mathematical_thinking: algebra, probability, statistics, calculus basics, percentages, ratios
+4. problem_solving: real-world problem decomposition, optimization, debugging scenarios, systems thinking
+5. communication: professional communication, conflict resolution, technical explanation, stakeholder management
+6. creativity: lateral thinking, innovative solutions, design thinking, unconventional approaches
 
 Rules:
-- 1 question difficulty 1 (easy), 1 difficulty 2 (medium), 1 difficulty 3 (hard)
+- For each category: 1 easy question (difficulty 1), 1 medium (difficulty 2), 1 hard (difficulty 3)
 - Each question has exactly 4 options
-- Questions must be unique and creative — not standard textbook examples
-- correct is the index (0, 1, 2, or 3) of the correct option in the options array
+- correct is the integer index (0, 1, 2, or 3) of the correct answer
+- Be creative with real-world scenarios — no standard textbook examples
+- Return ONLY valid JSON, nothing else, no thinking, no explanation
 
-Return ONLY this JSON:
+Return this exact JSON structure:
 {{
   "questions": [
     {{
+      "category": "logical_reasoning",
       "difficulty": 1,
       "question": "Question text?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correct": 0
     }},
     {{
+      "category": "logical_reasoning",
       "difficulty": 2,
+      "question": "Question text?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correct": 1
+    }},
+    {{
+      "category": "logical_reasoning",
+      "difficulty": 3,
       "question": "Question text?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correct": 2
     }},
-    {{
-      "difficulty": 3,
-      "question": "Question text?",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "correct": 1
-    }}
+    ... (repeat for all 6 categories, 3 questions each = 18 total)
   ]
 }}"""
-            }
-        ]
+        }
+    ]
 
-        raw = call_groq_with_fallback(messages, max_tokens=1200, temperature=0.9)
-        if not raw:
-            logger.error(f"Groq returned nothing for category: {category}")
+    raw = call_groq_with_fallback(messages, max_tokens=4000, temperature=0.85)
+
+    if not raw:
+        logger.error("Groq returned nothing for question generation")
+        return []
+
+    data = parse_json_response(raw)
+    if not data or 'questions' not in data:
+        logger.error("Failed to parse questions from single API call")
+        return []
+
+    all_questions = []
+    question_id = 1
+    valid_categories = list(CATEGORY_TOPICS.keys())
+
+    for q in data['questions']:
+        # Validate each question
+        if not all(k in q for k in ['category', 'question', 'options', 'correct', 'difficulty']):
+            continue
+        if q['category'] not in valid_categories:
+            continue
+        if len(q['options']) != 4:
+            continue
+        if int(q['correct']) not in [0, 1, 2, 3]:
             continue
 
-        data = parse_json_response(raw)
-        if not data or 'questions' not in data:
-            logger.error(f"Failed to parse questions for category: {category}")
-            continue
-
-        for q in data['questions'][:num_per_category]:
-            if not all(k in q for k in ['question', 'options', 'correct', 'difficulty']):
-                continue
-            if len(q['options']) != 4:
-                continue
-            if q['correct'] not in [0, 1, 2, 3]:
-                continue
-
-            all_questions.append({
-                'id': question_id,
-                'category': category,
-                'difficulty': q['difficulty'],
-                'question': q['question'],
-                'options': q['options'],
-                'correct': q['correct'],
-            })
-            question_id += 1
+        all_questions.append({
+            'id': question_id,
+            'category': q['category'],
+            'difficulty': int(q['difficulty']),
+            'question': q['question'],
+            'options': q['options'],
+            'correct': int(q['correct']),
+        })
+        question_id += 1
 
     import random
     random.shuffle(all_questions)
