@@ -8,7 +8,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
+GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent'
 
 def _parse_json(text: str) -> Optional[dict]:
     if not text:
@@ -157,7 +157,7 @@ Return exactly this JSON structure:
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "temperature": 0.9,
-                "maxOutputTokens": 4096,
+                "maxOutputTokens": 8192,
                 "responseMimeType": "application/json"
             }
         }
